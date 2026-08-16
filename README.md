@@ -2,6 +2,8 @@
 
 这是一个基于 [nihui/waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) 的可视化界面增强项目。
 
+> English version: [README_EN.md](README_EN.md)
+
 本仓库只包含 GUI 界面代码、集成补丁和打包所需的说明，不包含原项目的算法实现、模型文件、ncnn 依赖和着色器文件。算法与命令行核心均来自原项目，本仓库不重新实现或替换 waifu2x 算法。
 
 ## 算法来源
