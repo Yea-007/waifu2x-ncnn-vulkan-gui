@@ -1,0 +1,8 @@
+release/
+app_package/
+*.exe
+*.ini
+*.obj
+*.pdb
+*.ilk
+build/

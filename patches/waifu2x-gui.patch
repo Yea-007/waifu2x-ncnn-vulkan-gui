@@ -1,0 +1,317 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 0a521e0..964bda2 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
+ endif()
+ 
+ option(USE_STATIC_MOLTENVK "link moltenvk static library" OFF)
++option(BUILD_GUI "Build the GUI version (requires GLFW)" ON)
+ 
+ find_package(Threads)
+ find_package(OpenMP)
+@@ -60,9 +61,9 @@ if(MINGW)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -municode")
+ endif()
+ 
+-add_executable(waifu2x-ncnn-vulkan main.cpp waifu2x.cpp)
++add_executable(waifu2x-ncnn-vulkan-cli main.cpp waifu2x.cpp)
+ 
+-add_dependencies(waifu2x-ncnn-vulkan generate-spirv)
++add_dependencies(waifu2x-ncnn-vulkan-cli generate-spirv)
+ 
+ include(${CMAKE_CURRENT_SOURCE_DIR}/deps_ncnn.cmake)
+ include(${CMAKE_CURRENT_SOURCE_DIR}/deps_codec.cmake)
+@@ -92,7 +93,80 @@ if(USE_STATIC_MOLTENVK)
+     )
+ endif()
+ 
+-target_link_libraries(waifu2x-ncnn-vulkan ${WAIFU2X_LINK_LIBRARIES})
++target_link_libraries(waifu2x-ncnn-vulkan-cli ${WAIFU2X_LINK_LIBRARIES})
+ 
+ include(GNUInstallDirs)
+-install(TARGETS waifu2x-ncnn-vulkan RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
++install(TARGETS waifu2x-ncnn-vulkan-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
++
++# --- GUI target ---
++if(BUILD_GUI)
++    # GLFW
++    include(FetchContent)
++    FetchContent_Declare(
++        glfw
++        GIT_REPOSITORY https://github.com/glfw/glfw.git
++        GIT_TAG 3.4
++    )
++    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
++    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
++    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
++    FetchContent_MakeAvailable(glfw)
++
++    # Dear ImGui (docking branch)
++    FetchContent_Declare(
++        imgui
++        GIT_REPOSITORY https://github.com/ocornut/imgui.git
++        GIT_TAG docking
++    )
++    FetchContent_MakeAvailable(imgui)
++
++    set(GUI_SOURCES
++        gui/main_gui.cpp
++        gui/app_state.cpp
++        waifu2x.cpp
++        ${imgui_SOURCE_DIR}/imgui.cpp
++        ${imgui_SOURCE_DIR}/imgui_draw.cpp
++        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
++        ${imgui_SOURCE_DIR}/imgui_tables.cpp
++        ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
++        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
++        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
++    )
++
++    add_executable(waifu2x-ncnn-vulkan-gui ${GUI_SOURCES})
++    add_dependencies(waifu2x-ncnn-vulkan-gui generate-spirv)
++
++    target_include_directories(waifu2x-ncnn-vulkan-gui PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}
++        ${CMAKE_CURRENT_BINARY_DIR}
++        ${imgui_SOURCE_DIR}
++        ${imgui_SOURCE_DIR}/backends
++        ${imgui_SOURCE_DIR}/misc/cpp
++    )
++
++    find_package(OpenGL REQUIRED)
++    target_link_libraries(waifu2x-ncnn-vulkan-gui
++        ncnn
++        ${DEPS_CODEC_LIBRARIES}
++        glfw
++        OpenGL::GL
++    )
++
++    if(WIN32)
++        target_link_libraries(waifu2x-ncnn-vulkan-gui opengl32 uuid ole32 shell32 comdlg32)
++        target_compile_definitions(waifu2x-ncnn-vulkan-gui PRIVATE _CRT_SECURE_NO_WARNINGS)
++        if(MSVC)
++            # 源码为 UTF-8（无 BOM），中文界面文案需要此选项才不会乱码
++            target_compile_options(waifu2x-ncnn-vulkan-gui PRIVATE /utf-8)
++        endif()
++    endif()
++
++    # Add codec library dependencies for GUI target
++    add_dependencies(waifu2x-ncnn-vulkan-gui deps-libjpeg-turbo deps-zlib-ng deps-libpng deps-libwebp)
++    target_include_directories(waifu2x-ncnn-vulkan-gui PRIVATE
++        "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
++    target_link_directories(waifu2x-ncnn-vulkan-gui PRIVATE
++        "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
++
++    install(TARGETS waifu2x-ncnn-vulkan-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
++endif()
+diff --git a/src/deps_codec.cmake b/src/deps_codec.cmake
+index fb9a66b..8883c29 100644
+--- a/src/deps_codec.cmake
++++ b/src/deps_codec.cmake
+@@ -60,10 +60,10 @@ if(NOT USE_SYSTEM_JPEG)
+         INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
+     )
+ 
+-    add_dependencies(waifu2x-ncnn-vulkan deps-libjpeg-turbo)
++    add_dependencies(waifu2x-ncnn-vulkan-cli deps-libjpeg-turbo)
+ 
+-    target_include_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
+-    target_link_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
++    target_include_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
++    target_link_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
+     if(WIN32)
+         set(JPEG_LIBRARIES jpeg-static)
+     else()
+@@ -103,10 +103,10 @@ if(NOT USE_SYSTEM_ZLIB)
+         INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
+     )
+ 
+-    add_dependencies(waifu2x-ncnn-vulkan deps-zlib-ng)
++    add_dependencies(waifu2x-ncnn-vulkan-cli deps-zlib-ng)
+ 
+-    target_include_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
+-    target_link_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
++    target_include_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
++    target_link_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
+     if(WIN32)
+         set(ZLIB_LIBRARIES zlibstatic)
+     else()
+@@ -162,10 +162,10 @@ if(NOT USE_SYSTEM_PNG)
+         add_dependencies(deps-libpng deps-zlib-ng)
+     endif()
+ 
+-    add_dependencies(waifu2x-ncnn-vulkan deps-libpng)
++    add_dependencies(waifu2x-ncnn-vulkan-cli deps-libpng)
+ 
+-    target_include_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
+-    target_link_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
++    target_include_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
++    target_link_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
+     if(WIN32)
+         set(PNG_LIBRARIES libpng16_static)
+     else()
+@@ -207,10 +207,10 @@ if(NOT USE_SYSTEM_WEBP)
+         INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
+     )
+ 
+-    add_dependencies(waifu2x-ncnn-vulkan deps-libwebp)
++    add_dependencies(waifu2x-ncnn-vulkan-cli deps-libwebp)
+ 
+-    target_include_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
+-    target_link_directories(waifu2x-ncnn-vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
++    target_include_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_INCLUDEDIR}")
++    target_link_directories(waifu2x-ncnn-vulkan-cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/deps-install/${CMAKE_INSTALL_LIBDIR}")
+     if(WIN32)
+         set(WebP_LIBRARIES libwebp libwebpdecoder libwebpdemux libwebpmux libsharpyuv)
+     else()
+diff --git a/src/filesystem_utils.h b/src/filesystem_utils.h
+index 7aed4cb..aafd23c 100644
+--- a/src/filesystem_utils.h
++++ b/src/filesystem_utils.h
+@@ -105,6 +105,16 @@ static path_t get_file_name_without_extension(const path_t& path)
+     return path.substr(0, dot);
+ }
+ 
++// 只取文件名部分（去掉前面的目录路径）
++static path_t get_file_name(const path_t& path)
++{
++    size_t slash = path.find_last_of(PATHSTR("/\\"));
++    if (slash == path_t::npos)
++        return path;
++
++    return path.substr(slash + 1);
++}
++
+ static path_t get_file_extension(const path_t& path)
+ {
+     size_t dot = path.rfind(PATHSTR('.'));
+diff --git a/src/main.cpp b/src/main.cpp
+index a3a7b49..064e8bb 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -90,6 +90,7 @@ static std::vector<int> parse_optarg_int_array(const char* optarg)
+ #include "waifu2x.h"
+ 
+ #include "filesystem_utils.h"
++#include "model_config.h"
+ 
+ static void print_usage()
+ {
+@@ -674,77 +675,16 @@ int main(int argc, char** argv)
+         }
+     }
+ 
+-    int prepadding = 0;
+-
+-    if (model.find(PATHSTR("models-cunet")) != path_t::npos)
+-    {
+-        if (noise == -1)
+-        {
+-            prepadding = 18;
+-        }
+-        else if (scale == 1)
+-        {
+-            prepadding = 28;
+-        }
+-        else if (scale == 2 || scale == 4 || scale == 8 || scale == 16 || scale == 32)
+-        {
+-            prepadding = 18;
+-        }
+-    }
+-    else if (model.find(PATHSTR("models-upconv_7_anime_style_art_rgb")) != path_t::npos)
+-    {
+-        prepadding = 7;
+-    }
+-    else if (model.find(PATHSTR("models-upconv_7_photo")) != path_t::npos)
+-    {
+-        prepadding = 7;
+-    }
+-    else
++    ModelConfig modelcfg;
++    if (!resolve_model_config(model, noise, scale, modelcfg))
+     {
+         fprintf(stderr, "unknown model dir type\n");
+         return -1;
+     }
+ 
+-#if _WIN32
+-    wchar_t parampath[256];
+-    wchar_t modelpath[256];
+-    if (noise == -1)
+-    {
+-        swprintf(parampath, 256, L"%s/scale2.0x_model.param", model.c_str());
+-        swprintf(modelpath, 256, L"%s/scale2.0x_model.bin", model.c_str());
+-    }
+-    else if (scale == 1)
+-    {
+-        swprintf(parampath, 256, L"%s/noise%d_model.param", model.c_str(), noise);
+-        swprintf(modelpath, 256, L"%s/noise%d_model.bin", model.c_str(), noise);
+-    }
+-    else if (scale == 2 || scale == 4 || scale == 8 || scale == 16 || scale == 32)
+-    {
+-        swprintf(parampath, 256, L"%s/noise%d_scale2.0x_model.param", model.c_str(), noise);
+-        swprintf(modelpath, 256, L"%s/noise%d_scale2.0x_model.bin", model.c_str(), noise);
+-    }
+-#else
+-    char parampath[256];
+-    char modelpath[256];
+-    if (noise == -1)
+-    {
+-        sprintf(parampath, "%s/scale2.0x_model.param", model.c_str());
+-        sprintf(modelpath, "%s/scale2.0x_model.bin", model.c_str());
+-    }
+-    else if (scale == 1)
+-    {
+-        sprintf(parampath, "%s/noise%d_model.param", model.c_str(), noise);
+-        sprintf(modelpath, "%s/noise%d_model.bin", model.c_str(), noise);
+-    }
+-    else if (scale == 2 || scale == 4 || scale == 8 || scale == 16 || scale == 32)
+-    {
+-        sprintf(parampath, "%s/noise%d_scale2.0x_model.param", model.c_str(), noise);
+-        sprintf(modelpath, "%s/noise%d_scale2.0x_model.bin", model.c_str(), noise);
+-    }
+-#endif
+-
+-    path_t paramfullpath = sanitize_filepath(parampath);
+-    path_t modelfullpath = sanitize_filepath(modelpath);
++    int prepadding = modelcfg.prepadding;
++    path_t paramfullpath = modelcfg.param_path;
++    path_t modelfullpath = modelcfg.model_path;
+ 
+ #if _WIN32
+     CoInitializeEx(NULL, COINIT_MULTITHREADED);
+diff --git a/src/waifu2x.cpp b/src/waifu2x.cpp
+index fa1b0d7..b77d9c3 100644
+--- a/src/waifu2x.cpp
++++ b/src/waifu2x.cpp
+@@ -30,8 +30,11 @@ Waifu2x::~Waifu2x()
+         delete waifu2x_postproc;
+     }
+ 
+-    bicubic_2x->destroy_pipeline(net.opt);
+-    delete bicubic_2x;
++    if (bicubic_2x)
++    {
++        bicubic_2x->destroy_pipeline(net.opt);
++        delete bicubic_2x;
++    }
+ }
+ 
+ #if _WIN32
+@@ -54,6 +57,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
+         if (!fp)
+         {
+             fwprintf(stderr, L"_wfopen %ls failed\n", parampath.c_str());
++            return -1;
+         }
+ 
+         net.load_param(fp);
+@@ -65,6 +69,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
+         if (!fp)
+         {
+             fwprintf(stderr, L"_wfopen %ls failed\n", modelpath.c_str());
++            return -1;
+         }
+ 
+         net.load_model(fp);
